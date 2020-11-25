@@ -1,0 +1,99 @@
+package com.levin.sjf4j.core.codec.dialect;
+
+import com.jn.langx.Builder;
+import com.jn.langx.annotation.NonNull;
+import com.jn.langx.cache.Cache;
+import com.jn.langx.cache.CacheBuilder;
+import com.jn.langx.configuration.ConfigurationCacheLoaderAdapter;
+import com.jn.langx.util.Preconditions;
+import com.jn.langx.util.concurrent.CommonThreadFactory;
+import com.jn.langx.util.timing.timer.Timer;
+import com.jn.langx.util.timing.timer.WheelTimers;
+
+import java.lang.ref.WeakReference;
+
+public class ClassLoaderCodeConfigurationRepositoryBuilder<T extends CodecConfiguration> implements Builder<ClassLoaderCodecConfigurationRepository<T>> {
+    public static final Timer timer = WheelTimers.newHashedWheelTimer(new CommonThreadFactory("EasyJSON", true));
+
+    /**
+     * 类字段、方法解析器
+     */
+    @NonNull
+    private BeanPropertyAnnotatedCodecConfigurationParser beanPropertyCodecConfigurationParser;
+    /**
+     * 用于解析类
+     */
+    @NonNull
+    private BeanClassAnnotatedCodecConfigurationParser beanClassAnnotatedCodecConfigurationParser;
+    private WeakReference<ClassLoader> classLoaderRef;
+    private PropertyCodecConfigurationMerger propertyCodecConfigurationMerger;
+
+    public ClassLoaderCodeConfigurationRepositoryBuilder<T> beanPropertyCodecConfigurationParser(BeanPropertyAnnotatedCodecConfigurationParser beanPropertyCodecConfigurationParser) {
+        this.beanPropertyCodecConfigurationParser = beanPropertyCodecConfigurationParser;
+        return this;
+    }
+
+    public BeanPropertyAnnotatedCodecConfigurationParser beanPropertyCodecConfigurationParser() {
+        return this.beanPropertyCodecConfigurationParser;
+    }
+
+    public ClassLoaderCodeConfigurationRepositoryBuilder<T> beanClassAnnotatedCodecConfigurationParser(BeanClassAnnotatedCodecConfigurationParser beanClassAnnotatedCodecConfigurationParser) {
+        this.beanClassAnnotatedCodecConfigurationParser = beanClassAnnotatedCodecConfigurationParser;
+        return this;
+    }
+
+    public BeanClassAnnotatedCodecConfigurationParser beanClassAnnotatedCodecConfigurationParser() {
+        return this.beanClassAnnotatedCodecConfigurationParser;
+    }
+    public PropertyCodecConfigurationMerger propertyCodecConfigurationMerger() {
+        return this.propertyCodecConfigurationMerger;
+    }
+
+    public ClassLoaderCodeConfigurationRepositoryBuilder<T> propertyCodecConfigurationMerger(PropertyCodecConfigurationMerger merger) {
+        this.propertyCodecConfigurationMerger = merger;
+        return this;
+    }
+
+    public ClassLoaderCodeConfigurationRepositoryBuilder<T> classLoader(ClassLoader classLoader) {
+        this.classLoaderRef = new WeakReference<ClassLoader>(classLoader);
+        return this;
+    }
+
+
+    public ClassLoader classLoader() {
+        if (this.classLoaderRef != null) {
+            return this.classLoaderRef.get();
+        }
+        return null;
+    }
+
+
+    @Override
+    public ClassLoaderCodecConfigurationRepository<T> build() {
+        Preconditions.checkNotNull(propertyCodecConfigurationMerger);
+
+        // loader
+        ClassLoaderCodecConfigurationLoader<T> loaderCodecConfigurationLoader = new ClassLoaderCodecConfigurationLoader<T>();
+        loaderCodecConfigurationLoader.setBeanClassAnnotatedCodecConfigurationParser(beanClassAnnotatedCodecConfigurationParser);
+        loaderCodecConfigurationLoader.setBeanPropertyCodecConfigurationParser(beanPropertyCodecConfigurationParser);
+        loaderCodecConfigurationLoader.setPropertyCodecConfigurationMerger(propertyCodecConfigurationMerger);
+        loaderCodecConfigurationLoader.setClassLoader(classLoader());
+
+        // cache
+        Cache<String, T> cache = CacheBuilder.<String, T>newBuilder()
+                .concurrencyLevel(Runtime.getRuntime().availableProcessors())
+                .loader(new ConfigurationCacheLoaderAdapter<T>(loaderCodecConfigurationLoader))
+                .initialCapacity(1000)
+                .maxCapacity(Integer.MAX_VALUE)
+                .timer(timer)
+                .build();
+
+        // repository
+        ClassLoaderCodecConfigurationRepository<T> repository = new ClassLoaderCodecConfigurationRepository<T>();
+        repository.setConfigurationLoader(loaderCodecConfigurationLoader);
+        repository.setName(classLoader().toString());
+        repository.setCache(cache);
+        repository.setTimer(timer);
+        return repository;
+    }
+}
