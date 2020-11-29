@@ -1,0 +1,68 @@
+package com.levin.sjf4j.jackson.ext;
+
+import com.fasterxml.jackson.databind.BeanDescription;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.cfg.SerializerFactoryConfig;
+import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
+import com.fasterxml.jackson.databind.ser.BeanPropertyWriter;
+import com.fasterxml.jackson.databind.ser.BeanSerializerBuilder;
+import com.fasterxml.jackson.databind.ser.BeanSerializerFactory;
+import com.fasterxml.jackson.databind.ser.SerializerFactory;
+import com.levin.sjf4j.core.exclusion.ExclusionConfiguration;
+
+import java.lang.reflect.Field;
+import java.util.Iterator;
+import java.util.List;
+
+public class EasyJsonBeanSerializerFactory extends BeanSerializerFactory {
+    private EasyJsonObjectMapper objectMapper;
+
+    EasyJsonBeanSerializerFactory(SerializerFactoryConfig config, EasyJsonObjectMapper objectMapper) {
+        super(config);
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public SerializerFactory withConfig(SerializerFactoryConfig config) {
+        if (_factoryConfig == config) {
+            return this;
+        }
+        if (getClass() != EasyJsonBeanSerializerFactory.class) {
+            throw new IllegalStateException("Subtype of BeanSerializerFactory (" + getClass().getName()
+                    + ") has not properly overridden method 'withAdditionalSerializers': cannot instantiate subtype with "
+                    + "additional serializer definitions");
+        }
+        return new EasyJsonBeanSerializerFactory(config, objectMapper);
+    }
+
+    @Override
+    protected List<BeanPropertyWriter> findBeanProperties(SerializerProvider prov, BeanDescription beanDesc, BeanSerializerBuilder builder)
+            throws JsonMappingException {
+        //==================EasyJson exclusion start=========================
+        if (objectMapper != null && objectMapper.getJsonBuilder() != null) {
+            // filter using exclusion strategies
+            ExclusionConfiguration exclusionConfiguration = objectMapper.getJsonBuilder().getExclusionConfiguration();
+            Class clazz = beanDesc.getType().getRawClass();
+            List<BeanPropertyDefinition> properties = beanDesc.findProperties();
+            if (!exclusionConfiguration.isExcludedClass(clazz, true)) {
+                Iterator<BeanPropertyDefinition> iter = properties.iterator();
+                while (iter.hasNext()) {
+                    BeanPropertyDefinition property = iter.next();
+                    if (property.hasField()) {
+                        // exclusionConfiguration.isExcludedField(property.)
+                        Field field = property.getField().getAnnotated();
+                        if (exclusionConfiguration.isExcludedField(field, true)) {
+                            iter.remove();
+                        }
+                    }
+                }
+            } else {
+                properties.clear();
+            }
+        }
+        //==================EasyJson exclusion end=========================
+        return super.findBeanProperties(prov, beanDesc, builder);
+    }
+
+}
